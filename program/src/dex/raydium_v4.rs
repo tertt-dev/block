@@ -5,58 +5,47 @@ use solana_program::{
     program_error::ProgramError,
 };
 
-use super::SwapOutcome;
+use super::{SwapOutcome, SwapParams};
 
 #[derive(Clone, Debug)]
 pub struct RaydiumAccounts<'a> {
     pub program: AccountInfo<'a>,
-    pub metas: Vec<AccountInfo<'a>>, // excludes ix_data
-    pub ix_data: AccountInfo<'a>,
+    pub metas: Vec<AccountInfo<'a>>,
 }
 
 pub fn collect_accounts<'a>(acc_iter: &mut std::slice::Iter<'a, AccountInfo<'a>>) -> Result<RaydiumAccounts<'a>, ProgramError> {
     let program = acc_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?.clone();
-    let rest: Vec<AccountInfo> = acc_iter.cloned().collect();
-    if rest.len() < 2 { return Err(ProgramError::NotEnoughAccountKeys); }
-    let (metas, last) = rest.split_at(rest.len() - 1);
-    Ok(RaydiumAccounts { program, metas: metas.to_vec(), ix_data: last[0].clone() })
+    let metas: Vec<AccountInfo> = acc_iter.cloned().collect();
+    if metas.is_empty() { return Err(ProgramError::NotEnoughAccountKeys); }
+    Ok(RaydiumAccounts { program, metas })
 }
 
 pub fn cpi_swap(
-    _payer: &AccountInfo,
-    _user_quote_ata: &AccountInfo,
     user_token_ata: &AccountInfo,
-    _token_program: &AccountInfo,
     ray: RaydiumAccounts,
-    _amount_in: u64,
-    min_amount_out: u64,
+    params: &SwapParams,
 ) -> Result<SwapOutcome, ProgramError> {
     let pre_out = read_token_amount(user_token_ata)?;
 
-    let data_vec = {
-        let data = ray.ix_data.try_borrow_data()?;
-        data.to_vec()
-    };
     let metas: Vec<AccountMeta> = ray.metas.iter().map(|ai| AccountMeta {
         pubkey: *ai.key,
         is_signer: ai.is_signer,
         is_writable: ai.is_writable,
     }).collect();
 
-    let ix = Instruction { program_id: *ray.program.key, accounts: metas, data: data_vec };
+    let ix = Instruction { program_id: *ray.program.key, accounts: metas, data: params.dex_ix_bytes.to_vec() };
 
     // Build AccountInfo slice
-    let mut infos: Vec<AccountInfo> = Vec::with_capacity(1 + ray.metas.len() + 1);
+    let mut infos: Vec<AccountInfo> = Vec::with_capacity(1 + ray.metas.len());
     infos.push(ray.program);
     for a in ray.metas { infos.push(a); }
-    infos.push(ray.ix_data);
     invoke(&ix, &infos)?;
 
     let post_out = read_token_amount(user_token_ata)?;
     let amount_out = post_out.saturating_sub(pre_out);
 
     if amount_out == 0 { return Err(super::super::error::RouterError::InsufficientLiquidity.into()); }
-    if amount_out < min_amount_out { return Err(super::super::error::RouterError::SlippageExceeded.into()); }
+    if amount_out < params.min_amount_out { return Err(super::super::error::RouterError::SlippageExceeded.into()); }
 
     // Fee unknown without parsing events; we leave zero. It's conservative but okay for logging.
     Ok(SwapOutcome { amount_out, fee_paid: 0, dex_id: 0 })

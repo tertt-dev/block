@@ -23,21 +23,22 @@ entrypoint!(process_instruction);
 pub fn process_instruction<'a>(
     program_id: &Pubkey,
     accounts: &'a [AccountInfo<'a>],
-    input: &[u8],
+    input: &'a [u8],
 ) -> ProgramResult {
     // ==manual decode.
     let instruction = RouterInstruction::try_from_slice(input).map_err(|_| ProgramError::InvalidInstructionData)?;
 
     match instruction {
         RouterInstruction::Swap { token_mint, quote_mint, amount_in, min_amount_out } => {
-            processor::process_swap(program_id, accounts, token_mint, quote_mint, amount_in, min_amount_out)
+            let dex_ix_bytes = &input[ix::RouterInstruction::swap_header_len()..];
+            processor::process_swap(program_id, accounts, token_mint, quote_mint, amount_in, min_amount_out, dex_ix_bytes)
         }
     }
 }
 
 mod processor {
     use super::*;
-    use crate::dex::{detect::detect_market, raydium_v4, meteora_v1, DexChoice};
+    use crate::dex::{detect::detect_market, raydium_v4, meteora_v1, DexChoice, SwapParams};
 
     pub fn process_swap<'a>(
         _program_id: &Pubkey,
@@ -46,6 +47,7 @@ mod processor {
         quote_mint: Pubkey,
         amount_in: u64,
         min_amount_out: u64,
+        dex_ix_bytes: &'a [u8],
     ) -> ProgramResult {
         if amount_in == 0 { return Err(RouterError::InvalidAmount.into()); }
 
@@ -58,28 +60,22 @@ mod processor {
 
         let choice = detect_market(token_mint, quote_mint, acc_iter)?;
 
+        let params = SwapParams {
+            user_signer: payer_ai,
+            user_quote_ata,
+            user_token_ata,
+            token_program,
+            amount_in,
+            min_amount_out,
+            dex_ix_bytes,
+        };
+
         let result = match choice {
             DexChoice::RaydiumV4 { accounts: ray_accs } => {
-                raydium_v4::cpi_swap(
-                    payer_ai,
-                    user_quote_ata,
-                    user_token_ata,
-                    token_program,
-                    ray_accs,
-                    amount_in,
-                    min_amount_out,
-                )
+                raydium_v4::cpi_swap(user_token_ata, ray_accs, &params)
             }
             DexChoice::MeteoraV1 { accounts: met_accs } => {
-                meteora_v1::cpi_swap(
-                    payer_ai,
-                    user_quote_ata,
-                    user_token_ata,
-                    token_program,
-                    met_accs,
-                    amount_in,
-                    min_amount_out,
-                )
+                meteora_v1::cpi_swap(user_token_ata, met_accs, &params)
             }
         }?;
 

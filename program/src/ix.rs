@@ -8,7 +8,6 @@ pub enum RouterInstruction {
         quote_mint: Pubkey,
         amount_in: u64,
         min_amount_out: u64,
-        // carry DEX-specific ix data (ignored in program)
     }
 }
 
@@ -28,4 +27,7 @@ impl RouterInstruction {
             _ => Err(())
         }
     }
+
+    #[inline]
+    pub const fn swap_header_len() -> usize { 1 + 32 + 32 + 8 + 8 }
 }

@@ -9,6 +9,16 @@ pub struct SwapOutcome {
     pub dex_id: u8,
 }
 
+pub struct SwapParams<'a> {
+    pub user_signer: &'a solana_program::account_info::AccountInfo<'a>,
+    pub user_quote_ata: &'a solana_program::account_info::AccountInfo<'a>,
+    pub user_token_ata: &'a solana_program::account_info::AccountInfo<'a>,
+    pub token_program: &'a solana_program::account_info::AccountInfo<'a>,
+    pub amount_in: u64,
+    pub min_amount_out: u64,
+    pub dex_ix_bytes: &'a [u8],
+}
+
 #[derive(Clone, Debug)]
 pub enum DexChoice<'a> {
     RaydiumV4 { accounts: raydium_v4::RaydiumAccounts<'a> },
