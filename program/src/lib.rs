@@ -20,9 +20,9 @@ use crate::{error::RouterError, ix::RouterInstruction};
 
 entrypoint!(process_instruction);
 
-pub fn process_instruction(
+pub fn process_instruction<'a>(
     program_id: &Pubkey,
-    accounts: &[AccountInfo],
+    accounts: &'a [AccountInfo<'a>],
     input: &[u8],
 ) -> ProgramResult {
     // ==manual decode.
@@ -39,9 +39,9 @@ mod processor {
     use super::*;
     use crate::dex::{detect::detect_market, raydium_v4, meteora_v1, DexChoice};
 
-    pub fn process_swap(
+    pub fn process_swap<'a>(
         _program_id: &Pubkey,
-        accounts: &[AccountInfo],
+        accounts: &'a [AccountInfo<'a>],
         token_mint: Pubkey,
         quote_mint: Pubkey,
         amount_in: u64,
@@ -54,8 +54,8 @@ mod processor {
         let user_quote_ata = next_account_info(acc_iter)?;
         let user_token_ata = next_account_info(acc_iter)?;
         let token_program = next_account_info(acc_iter)?;
-        let system_program = next_account_info(acc_iter)?; // might not be used
-.
+        let _system_program = next_account_info(acc_iter)?; // might not be used
+
         let choice = detect_market(token_mint, quote_mint, acc_iter)?;
 
         let result = match choice {

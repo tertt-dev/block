@@ -1,25 +1,25 @@
 use solana_program::{
     account_info::AccountInfo,
     instruction::{AccountMeta, Instruction},
-    program::{invoke},
+    program::invoke,
     program_error::ProgramError,
-    msg,
 };
 
 use super::SwapOutcome;
 
+#[derive(Clone, Debug)]
 pub struct RaydiumAccounts<'a> {
-    pub program: &'a AccountInfo<'a>,
-    pub metas: Vec<&'a AccountInfo<'a>>, // excludes ix_data
-    pub ix_data: &'a AccountInfo<'a>,
+    pub program: AccountInfo<'a>,
+    pub metas: Vec<AccountInfo<'a>>, // excludes ix_data
+    pub ix_data: AccountInfo<'a>,
 }
 
 pub fn collect_accounts<'a>(acc_iter: &mut std::slice::Iter<'a, AccountInfo<'a>>) -> Result<RaydiumAccounts<'a>, ProgramError> {
-    let program = acc_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?;
-    let rest: Vec<&AccountInfo> = acc_iter.cloned().collect();
+    let program = acc_iter.next().ok_or(ProgramError::NotEnoughAccountKeys)?.clone();
+    let rest: Vec<AccountInfo> = acc_iter.cloned().collect();
     if rest.len() < 2 { return Err(ProgramError::NotEnoughAccountKeys); }
     let (metas, last) = rest.split_at(rest.len() - 1);
-    Ok(RaydiumAccounts { program, metas: metas.to_vec(), ix_data: last[0] })
+    Ok(RaydiumAccounts { program, metas: metas.to_vec(), ix_data: last[0].clone() })
 }
 
 pub fn cpi_swap(
@@ -33,16 +33,24 @@ pub fn cpi_swap(
 ) -> Result<SwapOutcome, ProgramError> {
     let pre_out = read_token_amount(user_token_ata)?;
 
-    let data = ray.ix_data.try_borrow_data()?;
+    let data_vec = {
+        let data = ray.ix_data.try_borrow_data()?;
+        data.to_vec()
+    };
     let metas: Vec<AccountMeta> = ray.metas.iter().map(|ai| AccountMeta {
         pubkey: *ai.key,
         is_signer: ai.is_signer,
         is_writable: ai.is_writable,
     }).collect();
 
-    let ix = Instruction { program_id: *ray.program.key, accounts: metas, data: data.to_vec() };
+    let ix = Instruction { program_id: *ray.program.key, accounts: metas, data: data_vec };
 
-    invoke(&ix, std::iter::once(ray.program).chain(ray.metas.into_iter()).chain(std::iter::once(ray.ix_data)).collect::<Vec<&AccountInfo>>().as_slice())?;
+    // Build AccountInfo slice
+    let mut infos: Vec<AccountInfo> = Vec::with_capacity(1 + ray.metas.len() + 1);
+    infos.push(ray.program);
+    for a in ray.metas { infos.push(a); }
+    infos.push(ray.ix_data);
+    invoke(&ix, &infos)?;
 
     let post_out = read_token_amount(user_token_ata)?;
     let amount_out = post_out.saturating_sub(pre_out);
