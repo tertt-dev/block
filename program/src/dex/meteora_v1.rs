@@ -54,6 +54,7 @@ pub fn cpi_swap(
     let post_out = read_token_amount(user_token_ata)?;
     let amount_out = post_out.saturating_sub(pre_out);
 
+    if amount_out == 0 { return Err(super::super::error::RouterError::InsufficientLiquidity.into()); }
     if amount_out < min_amount_out { return Err(super::super::error::RouterError::SlippageExceeded.into()); }
 
     Ok(SwapOutcome { amount_out, fee_paid: 0, dex_id: 1 })
