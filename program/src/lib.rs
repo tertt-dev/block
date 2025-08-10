@@ -15,6 +15,7 @@ pub mod state;
 pub mod error;
 pub mod ix;
 pub mod dex;
+pub mod util;
 
 use crate::{error::RouterError, ix::RouterInstruction};
 
@@ -65,6 +66,8 @@ mod processor {
             user_quote_ata,
             user_token_ata,
             token_program,
+            token_mint,
+            quote_mint,
             amount_in,
             min_amount_out,
             dex_ix_bytes,

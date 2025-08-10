@@ -6,6 +6,7 @@ use solana_program::{
 };
 
 use super::{SwapOutcome, SwapParams};
+use crate::util::{read_spl_token_amount};
 
 #[derive(Clone, Debug)]
 pub struct RaydiumAccounts<'a> {
@@ -25,7 +26,7 @@ pub fn cpi_swap(
     ray: RaydiumAccounts,
     params: &SwapParams,
 ) -> Result<SwapOutcome, ProgramError> {
-    let pre_out = read_token_amount(user_token_ata)?;
+    let pre_out = read_spl_token_amount(user_token_ata)?;
 
     let metas: Vec<AccountMeta> = ray.metas.iter().map(|ai| AccountMeta {
         pubkey: *ai.key,
@@ -41,7 +42,7 @@ pub fn cpi_swap(
     for a in ray.metas { infos.push(a); }
     invoke(&ix, &infos)?;
 
-    let post_out = read_token_amount(user_token_ata)?;
+    let post_out = read_spl_token_amount(user_token_ata)?;
     let amount_out = post_out.saturating_sub(pre_out);
 
     if amount_out == 0 { return Err(super::super::error::RouterError::InsufficientLiquidity.into()); }
@@ -49,11 +50,4 @@ pub fn cpi_swap(
 
     // Fee unknown without parsing events; we leave zero. It's conservative but okay for logging.
     Ok(SwapOutcome { amount_out, fee_paid: 0, dex_id: 0 })
-}
-
-fn read_token_amount(ai: &AccountInfo) -> Result<u64, ProgramError> {
-    let data = ai.try_borrow_data()?;
-    if data.len() < 72 { return Err(ProgramError::InvalidAccountData); }
-    let amount_bytes: [u8; 8] = data[64..72].try_into().unwrap();
-    Ok(u64::from_le_bytes(amount_bytes))
 }
